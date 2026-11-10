@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
 import {
   LayoutDashboard,
   Users,
@@ -20,6 +21,26 @@ import {
 
 export default function Sidebar({ isOpen, onClose }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { user, logout } = useAuth();
+
+  const getInitials = (name) => {
+    if (!name) return "U";
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+
+  const displayName = user?.name || "CampusConnect User";
+  const userInitials = getInitials(user?.name);
+  const displayRoleDept =
+    user?.department || (user?.role === "admin" ? "Administrative Services" : "Student");
+
+  const handleLogout = (e) => {
+    e.preventDefault();
+    logout();
+    router.push("/login");
+  };
 
   const navItems = [
     {
@@ -104,9 +125,8 @@ export default function Sidebar({ isOpen, onClose }) {
 
       {/* Sidebar Container */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-50 flex w-72 flex-col bg-[#0B1528] text-slate-200 transition-transform duration-300 ease-in-out lg:static lg:translate-x-0 ${
-          isOpen ? "translate-x-0" : "-translate-x-full"
-        } border-r border-slate-800/80 shadow-xl lg:shadow-none`}
+        className={`fixed top-0 bottom-0 left-0 z-50 flex w-72 flex-col bg-[#0B1528] text-slate-200 transition-transform duration-300 ease-in-out lg:static lg:translate-x-0 ${isOpen ? "translate-x-0" : "-translate-x-full"
+          } border-r border-slate-800/80 shadow-xl lg:shadow-none`}
       >
         {/* Brand / Logo Header */}
         <div className="flex h-20 items-center justify-between border-b border-slate-800/80 px-6">
@@ -166,33 +186,30 @@ export default function Sidebar({ isOpen, onClose }) {
                 <Link
                   key={item.name}
                   href={item.href}
-                  className={`group flex items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${
-                    item.active
+                  className={`group flex items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition-all ${item.active
                       ? "bg-blue-600 text-white shadow-md shadow-blue-600/30 font-semibold"
                       : "text-slate-300 hover:bg-slate-800/80 hover:text-white"
-                  }`}
+                    }`}
                   onClick={() => {
                     if (item.active && onClose) onClose();
                   }}
                 >
                   <div className="flex items-center gap-3">
                     <Icon
-                      className={`h-5 w-5 transition-transform group-hover:scale-105 ${
-                        item.active ? "text-white" : "text-slate-400 group-hover:text-blue-400"
-                      }`}
+                      className={`h-5 w-5 transition-transform group-hover:scale-105 ${item.active ? "text-white" : "text-slate-400 group-hover:text-blue-400"
+                        }`}
                     />
                     <span>{item.name}</span>
                   </div>
 
                   {item.badge && (
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                        item.badgeColor === "amber"
+                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${item.badgeColor === "amber"
                           ? "bg-amber-400/20 text-amber-300 border border-amber-400/30"
                           : item.badgeColor === "emerald"
-                          ? "bg-emerald-400/20 text-emerald-300 border border-emerald-400/30"
-                          : "bg-blue-400/20 text-blue-300 border border-blue-400/30"
-                      }`}
+                            ? "bg-emerald-400/20 text-emerald-300 border border-emerald-400/30"
+                            : "bg-blue-400/20 text-blue-300 border border-blue-400/30"
+                        }`}
                     >
                       {item.badge}
                     </span>
@@ -216,23 +233,23 @@ export default function Sidebar({ isOpen, onClose }) {
           </div>
         </div>
 
-        {/* Student Profile Card in Footer */}
+        {/* User Profile Card in Footer */}
         <div className="border-t border-slate-800/80 p-4">
           <div className="flex items-center justify-between rounded-xl bg-slate-900/90 border border-slate-800/90 p-3">
             <Link
               href="/profile"
               className="flex items-center gap-3 min-w-0 group"
-              title="View Student Profile"
+              title="View Profile"
             >
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 font-bold text-white text-sm shadow-inner group-hover:scale-105 transition-transform">
-                AM
+                {userInitials}
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-white group-hover:text-blue-300 transition-colors">
-                  Alex Morgan
+                  {displayName}
                 </p>
                 <p className="truncate text-xs text-slate-400">
-                  CS • 5th Semester
+                  {displayRoleDept}
                 </p>
               </div>
             </Link>
@@ -246,14 +263,15 @@ export default function Sidebar({ isOpen, onClose }) {
               >
                 <Settings className="h-4 w-4" />
               </Link>
-              <Link
-                href="/login"
+              <button
+                type="button"
+                onClick={handleLogout}
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-950/40 hover:text-rose-400 transition-colors"
                 title="Sign out"
                 aria-label="Sign out"
               >
                 <LogOut className="h-4 w-4" />
-              </Link>
+              </button>
             </div>
           </div>
         </div>

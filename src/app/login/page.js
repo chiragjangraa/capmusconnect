@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
 import {
   GraduationCap,
   Mail,
@@ -12,40 +13,53 @@ import {
   ArrowLeft,
   CheckCircle2,
   AlertCircle,
-  Sparkles,
+  User,
+  BookOpen,
 } from "@/components/Icons";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { login, register, isAuthenticated, user } = useAuth();
 
+  // Active form mode: "login" or "register"
+  const [mode, setMode] = useState("login");
+
+  // Form Fields
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [department, setDepartment] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
 
+  // Status & Feedback States
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Demo auto-fill helper
-  const handleUseDemo = () => {
-    setEmail("alex.morgan@campusconnect.edu");
-    setPassword("StudentPass2026!");
+  const resetMessages = () => {
     setError("");
+    setSuccessMessage("");
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    setError("");
+  const handleModeChange = (newMode) => {
+    setMode(newMode);
+    resetMessages();
+  };
 
-    // Field validation
+  // Submit Handler
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    resetMessages();
+
+    // Client-side Validations
     if (!email.trim()) {
-      setError("Please enter your student email address.");
+      setError("Please enter your email address.");
       return;
     }
 
     if (!email.includes("@") || !email.includes(".")) {
-      setError("Please enter a valid university email address (e.g. name@campusconnect.edu).");
+      setError("Please enter a valid email address.");
       return;
     }
 
@@ -54,24 +68,68 @@ export default function LoginPage() {
       return;
     }
 
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters long.");
-      return;
+    if (mode === "register") {
+      if (!name.trim()) {
+        setError("Please enter your full name.");
+        return;
+      }
+
+      if (!department.trim()) {
+        setError("Please enter your academic department.");
+        return;
+      }
+
+      if (password.length < 12) {
+        setError("Password must be at least 12 characters long. Passphrases are encouraged.");
+        return;
+      }
     }
 
-    // Demo success state
-    setIsLoading(true);
-    setError("");
+    setIsSubmitting(true);
 
-    setTimeout(() => {
-      setIsLoading(false);
-      setSuccess(true);
+    try {
+      if (mode === "login") {
+        const res = await login({
+          email: email.trim(),
+          password,
+        });
 
-      // Redirect to dashboard after brief feedback
-      setTimeout(() => {
-        router.push("/dashboard");
-      }, 1000);
-    }, 600);
+        if (res.success) {
+          const displayName = res.user?.name || "Student";
+          setSuccessMessage(`Welcome back, ${displayName}! Redirecting to dashboard...`);
+          setTimeout(() => {
+            router.push("/dashboard");
+          }, 800);
+        } else {
+          setError(res.error || "Authentication failed. Please verify your credentials.");
+          setIsSubmitting(false);
+        }
+      } else {
+        // Register mode
+        const res = await register({
+          name: name.trim(),
+          email: email.trim(),
+          password,
+          department: department.trim(),
+        });
+
+        if (res.success) {
+          const displayName = res.user?.name || "Student";
+          setSuccessMessage(
+            `Account created successfully! Welcome to CampusConnect, ${displayName}. Redirecting...`
+          );
+          setTimeout(() => {
+            router.push("/dashboard");
+          }, 800);
+        } else {
+          setError(res.error || "Registration failed. Please try again.");
+          setIsSubmitting(false);
+        }
+      }
+    } catch (err) {
+      setError(err.message || "An unexpected error occurred. Please try again.");
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -87,7 +145,7 @@ export default function LoginPage() {
         </Link>
       </div>
 
-      {/* Main Centered Login Card */}
+      {/* Main Centered Auth Card */}
       <div className="flex-1 flex items-center justify-center px-4 py-8 sm:px-6">
         <div className="w-full max-w-md">
           {/* Card Container */}
@@ -101,27 +159,38 @@ export default function LoginPage() {
                 <GraduationCap className="h-8 w-8" />
               </div>
               <h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">
-                Student Portal Login
+                {mode === "login" ? "Portal Sign In" : "Student Registration"}
               </h1>
               <p className="text-xs sm:text-sm text-slate-500">
-                Sign in to manage your courses, assignments, and grades
+                {mode === "login"
+                  ? "Sign in with your student or administrative credentials"
+                  : "Create a new student account to access the portal"}
               </p>
             </div>
 
-            {/* Quick Demo Credentials Assistant */}
-            <div className="mb-6 rounded-2xl bg-blue-50/80 border border-blue-200/70 p-3.5 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-blue-700 min-w-0">
-                <Sparkles className="h-4 w-4 shrink-0 text-blue-600" />
-                <span className="text-xs font-medium truncate">
-                  Testing assignment? Use demo credentials
-                </span>
-              </div>
+            {/* Mode Tabs (Sign In vs Register) */}
+            <div className="mb-6 grid grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1 text-xs font-semibold">
               <button
                 type="button"
-                onClick={handleUseDemo}
-                className="shrink-0 rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700 transition-colors"
+                onClick={() => handleModeChange("login")}
+                className={`rounded-xl py-2 transition-all ${
+                  mode === "login"
+                    ? "bg-white text-blue-600 shadow-sm shadow-slate-200"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
               >
-                Auto-fill
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => handleModeChange("register")}
+                className={`rounded-xl py-2 transition-all ${
+                  mode === "register"
+                    ? "bg-white text-blue-600 shadow-sm shadow-slate-200"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Register
               </button>
             </div>
 
@@ -137,27 +206,54 @@ export default function LoginPage() {
             )}
 
             {/* Success Banner */}
-            {success && (
+            {successMessage && (
               <div
                 role="status"
                 className="mb-5 flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 text-xs text-emerald-800 animate-fadeIn"
               >
                 <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                <span className="font-semibold">
-                  Welcome back, Alex Morgan! Redirecting to your dashboard...
-                </span>
+                <span className="font-semibold">{successMessage}</span>
               </div>
             )}
 
             {/* Form */}
             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Register-only: Full Name */}
+              {mode === "register" && (
+                <div className="space-y-1.5 animate-fadeIn">
+                  <label
+                    htmlFor="name"
+                    className="block text-xs font-semibold uppercase tracking-wider text-slate-700"
+                  >
+                    Full Name
+                  </label>
+                  <div className="relative">
+                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                      <User className="h-4 w-4" />
+                    </div>
+                    <input
+                      id="name"
+                      type="text"
+                      value={name}
+                      onChange={(e) => {
+                        setName(e.target.value);
+                        if (error) setError("");
+                      }}
+                      placeholder="e.g. Aarav Sharma"
+                      disabled={isSubmitting || !!successMessage}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm text-slate-900 placeholder-slate-400 transition-colors focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60"
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* Email Field */}
               <div className="space-y-1.5">
                 <label
                   htmlFor="email"
                   className="block text-xs font-semibold uppercase tracking-wider text-slate-700"
                 >
-                  Student Email
+                  {mode === "login" ? "University Email" : "Student Email"}
                 </label>
                 <div className="relative">
                   <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
@@ -171,12 +267,45 @@ export default function LoginPage() {
                       setEmail(e.target.value);
                       if (error) setError("");
                     }}
-                    placeholder="student@campusconnect.edu"
-                    disabled={isLoading || success}
+                    placeholder={
+                      mode === "login"
+                        ? "student@campus.edu or admin@campus.edu"
+                        : "name@campus.edu"
+                    }
+                    disabled={isSubmitting || !!successMessage}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm text-slate-900 placeholder-slate-400 transition-colors focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60"
                   />
                 </div>
               </div>
+
+              {/* Register-only: Department */}
+              {mode === "register" && (
+                <div className="space-y-1.5 animate-fadeIn">
+                  <label
+                    htmlFor="department"
+                    className="block text-xs font-semibold uppercase tracking-wider text-slate-700"
+                  >
+                    Academic Department
+                  </label>
+                  <div className="relative">
+                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                      <BookOpen className="h-4 w-4" />
+                    </div>
+                    <input
+                      id="department"
+                      type="text"
+                      value={department}
+                      onChange={(e) => {
+                        setDepartment(e.target.value);
+                        if (error) setError("");
+                      }}
+                      placeholder="e.g. Computer Science & Engineering"
+                      disabled={isSubmitting || !!successMessage}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm text-slate-900 placeholder-slate-400 transition-colors focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60"
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Password Field */}
               <div className="space-y-1.5">
@@ -187,16 +316,18 @@ export default function LoginPage() {
                   >
                     Password
                   </label>
-                  <a
-                    href="#forgot"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      alert("Demo password reset instructions have been sent to your university email.");
-                    }}
-                    className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
-                  >
-                    Forgot password?
-                  </a>
+                  {mode === "login" && (
+                    <a
+                      href="#forgot"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        alert("Password reset instructions will be sent to your registered university email.");
+                      }}
+                      className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                    >
+                      Forgot password?
+                    </a>
+                  )}
                 </div>
                 <div className="relative">
                   <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
@@ -211,7 +342,7 @@ export default function LoginPage() {
                       if (error) setError("");
                     }}
                     placeholder="••••••••"
-                    disabled={isLoading || success}
+                    disabled={isSubmitting || !!successMessage}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-11 text-sm text-slate-900 placeholder-slate-400 transition-colors focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60"
                   />
                   <button
@@ -227,32 +358,39 @@ export default function LoginPage() {
                     )}
                   </button>
                 </div>
+                {mode === "register" && (
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    Minimum 12 characters. Passphrases and password managers are supported.
+                  </p>
+                )}
               </div>
 
-              {/* Remember Me Checkbox */}
-              <div className="flex items-center pt-1">
-                <input
-                  id="remember-me"
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                />
-                <label
-                  htmlFor="remember-me"
-                  className="ml-2 block text-xs font-medium text-slate-600 cursor-pointer"
-                >
-                  Remember this device for 30 days
-                </label>
-              </div>
+              {/* Remember Me Checkbox (Login mode only) */}
+              {mode === "login" && (
+                <div className="flex items-center pt-1">
+                  <input
+                    id="remember-me"
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <label
+                    htmlFor="remember-me"
+                    className="ml-2 block text-xs font-medium text-slate-600 cursor-pointer"
+                  >
+                    Remember this device for 30 days
+                  </label>
+                </div>
+              )}
 
-              {/* Login Button */}
+              {/* Submit Button */}
               <button
                 type="submit"
-                disabled={isLoading || success}
+                disabled={isSubmitting || !!successMessage}
                 className="w-full mt-2 inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 px-4 text-sm font-semibold text-white shadow-md shadow-blue-600/20 transition-all hover:bg-blue-700 hover:shadow-blue-600/30 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-70 disabled:cursor-not-allowed"
               >
-                {isLoading ? (
+                {isSubmitting ? (
                   <span className="inline-flex items-center gap-2">
                     <svg
                       className="h-4 w-4 animate-spin text-white"
@@ -273,36 +411,54 @@ export default function LoginPage() {
                         d="M4 12a8 8 0 018-8v8H4z"
                       />
                     </svg>
-                    Signing in...
+                    {mode === "login" ? "Signing in..." : "Creating account..."}
                   </span>
-                ) : success ? (
+                ) : successMessage ? (
                   <span className="inline-flex items-center gap-1.5">
                     <CheckCircle2 className="h-4 w-4" />
                     Verified! Redirecting...
                   </span>
                 ) : (
-                  <span>Sign In to Portal</span>
+                  <span>
+                    {mode === "login"
+                      ? "Sign In to Portal"
+                      : "Register Student Account"}
+                  </span>
                 )}
               </button>
             </form>
 
-            {/* Direct Dashboard Link */}
+            {/* Toggle footer between sign in and register */}
             <div className="mt-6 pt-5 border-t border-slate-100 text-center">
-              <p className="text-xs text-slate-500">
-                Want to bypass login for assignment grading?{" "}
-                <Link
-                  href="/dashboard"
-                  className="font-semibold text-blue-600 hover:text-blue-700 hover:underline"
-                >
-                  Enter Dashboard Directly →
-                </Link>
-              </p>
+              {mode === "login" ? (
+                <p className="text-xs text-slate-500">
+                  New to CampusConnect?{" "}
+                  <button
+                    type="button"
+                    onClick={() => handleModeChange("register")}
+                    className="font-semibold text-blue-600 hover:text-blue-700 hover:underline"
+                  >
+                    Create student account →
+                  </button>
+                </p>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  Already have an account?{" "}
+                  <button
+                    type="button"
+                    onClick={() => handleModeChange("login")}
+                    className="font-semibold text-blue-600 hover:text-blue-700 hover:underline"
+                  >
+                    Sign in here →
+                  </button>
+                </p>
+              )}
             </div>
           </div>
 
           {/* Security footnote */}
           <p className="mt-6 text-center text-xs text-slate-400">
-            Protected by CampusConnect University Single Sign-On (SSO).
+            Protected by CampusConnect University Authentication.
           </p>
         </div>
       </div>
@@ -314,4 +470,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

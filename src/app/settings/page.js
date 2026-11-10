@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { useAuth } from "@/context/AuthContext";
+import { authAPI } from "@/lib/api";
 import {
   Settings,
   Bell,
@@ -13,23 +15,29 @@ import {
   Sliders,
   Sparkles,
   X,
+  AlertCircle,
 } from "@/components/Icons";
-import { studentData } from "@/data/mockData";
 
 export default function SettingsPage() {
+  const { user, role, isLoading: authLoading, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState("account"); // "account" | "notifications" | "appearance"
   const [saveSuccessMsg, setSaveSuccessMsg] = useState("");
+  const [saveErrorMsg, setSaveErrorMsg] = useState("");
 
-  // Account settings state
-  const [accountSettings, setAccountSettings] = useState({
-    name: studentData.profile.name,
-    email: studentData.profile.email,
-    id: studentData.profile.id,
-    currentPassword: "",
-    newPassword: "",
-    confirmPassword: "",
-    twoFactorEnabled: true,
-  });
+  // Account profile state (supports user override without redundant sync effect)
+  const [nameInput, setNameInput] = useState(null);
+  const [deptInput, setDeptInput] = useState(null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  const name = nameInput !== null ? nameInput : (user?.name || "");
+  const department = deptInput !== null ? deptInput : (user?.department || "");
+
+  // Password settings state
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(true);
 
   // Notification preferences state
   const [notifications, setNotifications] = useState({
@@ -49,14 +57,142 @@ export default function SettingsPage() {
     defaultRoute: "/dashboard",
   });
 
-  const handleSaveSettings = (e) => {
+  // Profile Update Handler (name and department)
+  const handleSaveProfile = async (e) => {
     e.preventDefault();
-    setSaveSuccessMsg("Preferences saved successfully! Changes are active for this browser session.");
+    setSaveSuccessMsg("");
+    setSaveErrorMsg("");
 
+    if (!name.trim()) {
+      setSaveErrorMsg("Full name is required.");
+      return;
+    }
+    if (!department.trim()) {
+      setSaveErrorMsg("Department is required.");
+      return;
+    }
+
+    setIsSavingProfile(true);
+    try {
+      const res = await authAPI.updateProfile({
+        name: name.trim(),
+        department: department.trim(),
+      });
+
+      if (res?.success) {
+        setNameInput(null);
+        setDeptInput(null);
+        await refreshUser();
+        setSaveSuccessMsg("Account profile details updated successfully!");
+        setTimeout(() => {
+          setSaveSuccessMsg("");
+        }, 4500);
+      } else {
+        setSaveErrorMsg(res?.message || "Failed to update profile settings.");
+      }
+    } catch (err) {
+      setSaveErrorMsg(err.message || "Failed to update profile settings.");
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  // Password Change Handler
+  const handleSavePassword = async (e) => {
+    e.preventDefault();
+    setSaveSuccessMsg("");
+    setSaveErrorMsg("");
+
+    if (!currentPassword) {
+      setSaveErrorMsg("Please enter your current password.");
+      return;
+    }
+    if (!newPassword) {
+      setSaveErrorMsg("Please enter your new password.");
+      return;
+    }
+    if (newPassword.length < 12) {
+      setSaveErrorMsg("New password must be at least 12 characters long. Passphrases are encouraged.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setSaveErrorMsg("New password and confirm password do not match.");
+      return;
+    }
+
+    setIsSavingPassword(true);
+    try {
+      const res = await authAPI.updatePassword({
+        currentPassword,
+        newPassword,
+      });
+
+      if (res?.success) {
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+        setSaveSuccessMsg("Password changed successfully!");
+        setTimeout(() => {
+          setSaveSuccessMsg("");
+        }, 4500);
+      } else {
+        setSaveErrorMsg(res?.message || "Failed to change password.");
+      }
+    } catch (err) {
+      setSaveErrorMsg(err.message || "Failed to change password.");
+    } finally {
+      setIsSavingPassword(false);
+    }
+  };
+
+  // Notification Preferences Handler
+  const handleSaveNotifications = (e) => {
+    e.preventDefault();
+    setSaveErrorMsg("");
+    setSaveSuccessMsg("Notification preferences saved successfully for this session.");
     setTimeout(() => {
       setSaveSuccessMsg("");
     }, 4500);
   };
+
+  // Appearance Preferences Handler
+  const handleSaveAppearance = (e) => {
+    e.preventDefault();
+    setSaveErrorMsg("");
+    setSaveSuccessMsg("Appearance and display preferences saved successfully for this session.");
+    setTimeout(() => {
+      setSaveSuccessMsg("");
+    }, 4500);
+  };
+
+  if (authLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex min-h-[50vh] flex-col items-center justify-center space-y-4">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+          <p className="text-sm font-semibold text-slate-600">
+            Loading portal settings...
+          </p>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!user) {
+    return (
+      <DashboardLayout>
+        <div className="rounded-3xl border border-amber-200 bg-amber-50 p-8 text-center shadow-xs">
+          <AlertCircle className="mx-auto h-12 w-12 text-amber-600" />
+          <h2 className="mt-3 text-lg font-bold text-amber-900">
+            Authentication Required
+          </h2>
+          <p className="mt-1 text-sm text-amber-700">
+            Please sign in to access and customize your account and portal settings.
+          </p>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
@@ -74,7 +210,27 @@ export default function SettingsPage() {
             <button
               onClick={() => setSaveSuccessMsg("")}
               className="text-emerald-700 hover:text-emerald-900"
-              aria-label="Close message"
+              aria-label="Close success message"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Error Alert */}
+        {saveErrorMsg && (
+          <div
+            role="alert"
+            className="flex items-center justify-between rounded-2xl border border-red-200 bg-red-50 p-4 text-xs sm:text-sm font-semibold text-red-800 shadow-sm animate-fadeIn"
+          >
+            <div className="flex items-center gap-2.5">
+              <AlertCircle className="h-5 w-5 text-red-600 shrink-0" />
+              <span>{saveErrorMsg}</span>
+            </div>
+            <button
+              onClick={() => setSaveErrorMsg("")}
+              className="text-red-700 hover:text-red-900"
+              aria-label="Close error message"
             >
               <X className="h-4 w-4" />
             </button>
@@ -94,6 +250,15 @@ export default function SettingsPage() {
             <p className="text-xs sm:text-sm text-slate-500 max-w-xl">
               Customize security preferences, notification delivery channels, and personalized dashboard display settings.
             </p>
+          </div>
+
+          <div className="inline-flex items-center gap-2 self-start rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            <span>Active Account:</span>
+            <span className="font-bold text-slate-900">{user.email}</span>
+            <span className="rounded-md bg-blue-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-blue-700">
+              {role || "student"}
+            </span>
           </div>
         </div>
 
@@ -139,178 +304,272 @@ export default function SettingsPage() {
           </button>
         </div>
 
-        {/* Tab 1: Account Settings */}
+        {/* Tab 1: Account & Security */}
         {activeTab === "account" && (
-          <form onSubmit={handleSaveSettings} className="space-y-6">
-            <div className="rounded-3xl border border-slate-200/90 bg-white p-6 sm:p-8 shadow-xs space-y-6">
-              <div className="border-b border-slate-100 pb-4">
-                <h2 className="text-base font-bold text-slate-900">
-                  Student Account Credentials
-                </h2>
-                <p className="text-xs text-slate-500">
-                  University Single Sign-On (SSO) credentials and student identity
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Student Full Name
-                  </label>
-                  <input
-                    type="text"
-                    value={accountSettings.name}
-                    onChange={(e) =>
-                      setAccountSettings({
-                        ...accountSettings,
-                        name: e.target.value,
-                      })
-                    }
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 px-3 text-sm text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Institutional Email
-                  </label>
-                  <input
-                    type="email"
-                    value={accountSettings.email}
-                    disabled
-                    className="w-full rounded-xl border border-slate-200 bg-slate-100 py-2.5 px-3 text-sm text-slate-500 cursor-not-allowed"
-                  />
-                  <span className="text-[11px] text-slate-400">
-                    Email is managed by university registrar.
-                  </span>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Student ID
-                  </label>
-                  <input
-                    type="text"
-                    value={accountSettings.id}
-                    disabled
-                    className="w-full rounded-xl border border-slate-200 bg-slate-100 py-2.5 px-3 text-sm font-mono text-slate-500 cursor-not-allowed"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Password & Security Section */}
-            <div className="rounded-3xl border border-slate-200/90 bg-white p-6 sm:p-8 shadow-xs space-y-6">
-              <div className="border-b border-slate-100 pb-4">
-                <h2 className="text-base font-bold text-slate-900">
-                  Password & Multi-Factor Security
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Update your campus portal password and authentication devices
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Current Password
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="••••••••"
-                    value={accountSettings.currentPassword}
-                    onChange={(e) =>
-                      setAccountSettings({
-                        ...accountSettings,
-                        currentPassword: e.target.value,
-                      })
-                    }
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 px-3 text-sm text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    New Password
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="••••••••"
-                    value={accountSettings.newPassword}
-                    onChange={(e) =>
-                      setAccountSettings({
-                        ...accountSettings,
-                        newPassword: e.target.value,
-                      })
-                    }
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 px-3 text-sm text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
-                    Confirm Password
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="••••••••"
-                    value={accountSettings.confirmPassword}
-                    onChange={(e) =>
-                      setAccountSettings({
-                        ...accountSettings,
-                        confirmPassword: e.target.value,
-                      })
-                    }
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 px-3 text-sm text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                  />
-                </div>
-              </div>
-
-              {/* 2FA Toggle */}
-              <div className="rounded-2xl bg-slate-50 border border-slate-200/80 p-4 flex items-center justify-between gap-4">
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-blue-600" />
-                    <span className="text-xs font-bold text-slate-900">
-                      Two-Factor Authentication (2FA)
-                    </span>
-                  </div>
+          <div className="space-y-6">
+            {/* Account Credentials Card */}
+            <form onSubmit={handleSaveProfile}>
+              <div className="rounded-3xl border border-slate-200/90 bg-white p-6 sm:p-8 shadow-xs space-y-6">
+                <div className="border-b border-slate-100 pb-4">
+                  <h2 className="text-base font-bold text-slate-900">
+                    {role === "admin"
+                      ? "Administrator Account Details"
+                      : "Student Account Credentials"}
+                  </h2>
                   <p className="text-xs text-slate-500">
-                    Require verification code on unrecognized device sign-ins
+                    {role === "admin"
+                      ? "CampusConnect administrative staff identity and departmental assignment"
+                      : "University Single Sign-On (SSO) credentials and student identity"}
                   </p>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={accountSettings.twoFactorEnabled}
-                    onChange={(e) =>
-                      setAccountSettings({
-                        ...accountSettings,
-                        twoFactorEnabled: e.target.checked,
-                      })
-                    }
-                    className="sr-only peer"
-                  />
-                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                </label>
-              </div>
 
-              <div className="flex justify-end pt-2">
-                <button
-                  type="submit"
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-semibold text-white shadow-md shadow-blue-600/20 hover:bg-blue-700 transition-colors"
-                >
-                  <Save className="h-4 w-4" />
-                  <span>Save Account Settings</span>
-                </button>
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+                      {role === "admin" ? "Administrator Name" : "Student Full Name"}
+                    </label>
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setNameInput(e.target.value)}
+                      placeholder="Enter full name"
+                      required
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 px-3 text-sm text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+                      Academic Department
+                    </label>
+                    <input
+                      type="text"
+                      value={department}
+                      onChange={(e) => setDeptInput(e.target.value)}
+                      placeholder="e.g. Computer Science & Engineering"
+                      required
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 px-3 text-sm text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+                      Institutional Email
+                    </label>
+                    <input
+                      type="email"
+                      value={user.email}
+                      disabled
+                      className="w-full rounded-xl border border-slate-200 bg-slate-100 py-2.5 px-3 text-sm text-slate-500 cursor-not-allowed"
+                    />
+                    <span className="text-[11px] text-slate-400">
+                      Email address is managed by university registrar.
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+                      {role === "admin" ? "Staff Account ID" : "Student Account ID"}
+                    </label>
+                    <input
+                      type="text"
+                      value={user._id}
+                      disabled
+                      className="w-full rounded-xl border border-slate-200 bg-slate-100 py-2.5 px-3 text-sm font-mono text-slate-500 cursor-not-allowed"
+                    />
+                    <span className="text-[11px] text-slate-400">
+                      Permanent database account identifier.
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+                      Account Role & Access Level
+                    </label>
+                    <div className="w-full rounded-xl border border-slate-200 bg-slate-100 py-2.5 px-3 text-sm text-slate-700 font-semibold flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Shield className="h-4 w-4 text-blue-600" />
+                        <span className="capitalize">
+                          {role === "admin"
+                            ? "Administrator (Elevated System Privileges)"
+                            : "Student (Standard Academic Portal Access)"}
+                        </span>
+                      </div>
+                      <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded bg-blue-100 text-blue-700">
+                        {role || "student"}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-400">
+                      Role elevation is strictly restricted to university central administration.
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-2 border-t border-slate-100">
+                  <button
+                    type="submit"
+                    disabled={isSavingProfile}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-semibold text-white shadow-md shadow-blue-600/20 hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {isSavingProfile ? (
+                      <>
+                        <svg
+                          className="h-4 w-4 animate-spin text-white"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                        >
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                          />
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          />
+                        </svg>
+                        <span>Saving Changes...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4" />
+                        <span>Save Profile Details</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
-            </div>
-          </form>
+            </form>
+
+            {/* Password & Security Section */}
+            <form onSubmit={handleSavePassword}>
+              <div className="rounded-3xl border border-slate-200/90 bg-white p-6 sm:p-8 shadow-xs space-y-6">
+                <div className="border-b border-slate-100 pb-4">
+                  <h2 className="text-base font-bold text-slate-900">
+                    Password & Multi-Factor Security
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Update your campus portal password and authentication credentials
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+                      Current Password
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="••••••••"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 px-3 text-sm text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+                      New Password
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="••••••••"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 px-3 text-sm text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                    <span className="text-[11px] text-slate-400">
+                      Minimum 12 characters. Passphrases and password managers are supported.
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+                      Confirm Password
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="••••••••"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 px-3 text-sm text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+                </div>
+
+                {/* 2FA Toggle */}
+                <div className="rounded-2xl bg-slate-50 border border-slate-200/80 p-4 flex items-center justify-between gap-4">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <Shield className="h-4 w-4 text-blue-600" />
+                      <span className="text-xs font-bold text-slate-900">
+                        Two-Factor Authentication (2FA)
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Require verification confirmation on unrecognized browser sign-ins
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={twoFactorEnabled}
+                      onChange={(e) => setTwoFactorEnabled(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                <div className="flex justify-end pt-2 border-t border-slate-100">
+                  <button
+                    type="submit"
+                    disabled={isSavingPassword}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-semibold text-white shadow-md shadow-blue-600/20 hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {isSavingPassword ? (
+                      <>
+                        <svg
+                          className="h-4 w-4 animate-spin text-white"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                        >
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                          />
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          />
+                        </svg>
+                        <span>Updating Password...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="h-4 w-4" />
+                        <span>Update Password</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
         )}
 
         {/* Tab 2: Notification Preferences */}
         {activeTab === "notifications" && (
-          <form onSubmit={handleSaveSettings} className="space-y-6">
+          <form onSubmit={handleSaveNotifications} className="space-y-6">
             <div className="rounded-3xl border border-slate-200/90 bg-white p-6 sm:p-8 shadow-xs space-y-6">
               <div className="border-b border-slate-100 pb-4">
                 <h2 className="text-base font-bold text-slate-900">
@@ -350,7 +609,7 @@ export default function SettingsPage() {
                       Grade & Feedback Publication
                     </h3>
                     <p className="text-xs text-slate-500">
-                      Immediate email notification when a professor publishes exam marks or assignment feedback
+                      Immediate email notification when a professor publishes marks or assignment feedback
                     </p>
                   </div>
                   <input
@@ -448,7 +707,7 @@ export default function SettingsPage() {
 
         {/* Tab 3: Appearance Preferences */}
         {activeTab === "appearance" && (
-          <form onSubmit={handleSaveSettings} className="space-y-6">
+          <form onSubmit={handleSaveAppearance} className="space-y-6">
             <div className="rounded-3xl border border-slate-200/90 bg-white p-6 sm:p-8 shadow-xs space-y-6">
               <div className="border-b border-slate-100 pb-4">
                 <h2 className="text-base font-bold text-slate-900">
@@ -605,4 +864,3 @@ export default function SettingsPage() {
     </DashboardLayout>
   );
 }
-
